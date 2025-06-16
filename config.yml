@@ -1,0 +1,39 @@
+# Evolution params
+evolution_params:
+  n_generations: 100
+  population_size: 100
+  remove_population_pct: 0.5
+  n_elites: 0
+  mutation_rate: 0.1
+  mutation_factor: 0.1
+  save_path: results/one-season
+
+# Prescriptor-specific params
+prescriptor_params:
+  depth_scale: 10.0
+  device: cpu
+  model_params:
+    - type: linear
+      in_features: 42
+      out_features: 64
+    - type: relu
+    - type: linear
+      in_features: 64
+      out_features: 1
+    - type: sigmoid
+
+# Evaluation params
+eval_params:
+  aquacrop_params:
+    sim_start_date: 2016/05/01
+    sim_end_date: 2016/10/31
+    weather_filepath: champion_climate.txt
+    soil_params:
+      soil_type: ClayLoam
+    crop_params:
+      c_name: Maize
+      planting_date: 05/01
+    init_wc_params:
+      wc_type: Pct
+      value: [70]
+  n_jobs: -1
