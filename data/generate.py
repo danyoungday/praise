@@ -26,7 +26,7 @@ class DataGenerator:
         the smt and max_irr values.
         Returns the results dictionary from the AquaCrop model (see AquaCropEvaluator.run_aquacrop).
         """
-        irrigation_management = IrrigationManagement(irrigation_method=1, SMT=smt, max_irr_season=max_irr)
+        irrigation_management = IrrigationManagement(irrigation_method=1, SMT=smt, MaxIrrSeason=max_irr)
         model = AquaCropModel(sim_start_time=self.evaluator.sim_start_date,
                               sim_end_time=self.evaluator.sim_end_date,
                               weather_df=self.evaluator.weather_data,
@@ -54,6 +54,7 @@ class DataGenerator:
         baseline_df = pd.read_csv(baseline_path)
         results_dfs = []
         for i, row in baseline_df.iterrows():
+            print(f"Generating data for baseline {i}: SMT[{row['SMT-1']:.2f}, {row['SMT-2']:.2f}, {row['SMT-3']:.2f}, {row['SMT-4']:.2f}], Max Irrigation: {row['max_irrigation']:.0f}")
             smt = [row[f"SMT-{i}"] for i in range(1, 5)]
             max_irr = row["max_irrigation"]
             results_df = self.run_aquacrop(smt, max_irr)
