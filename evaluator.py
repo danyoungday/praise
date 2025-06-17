@@ -95,23 +95,21 @@ class AquaCropEvaluator(Evaluator):
             water_storage: pd.DataFrame - water storage data at each time step
             crop_growth: pd.DataFrame - crop growth data at each time step
         """
-        model._initialize()
         t = 0
         depths = []
-        while model._clock_struct.model_is_finished is False:
-            # If we have a candidate, construct features for it and then get the depth to apply
-            if candidate is not None:
+        if candidate is not None:
+            model._initialize()
+            while model._clock_struct.model_is_finished is False:
                 features = self.construct_features(model, t)
                 t += 1
                 # get depth to apply
                 depth = candidate.forward(features)
                 depths.append(depth)
                 model._param_struct.IrrMngt.depth = depth
-            # If we have no candidate, keep the default irrigation strategy and log the depth
-            else:
-                depths.append(model._param_struct.IrrMngt.depth)
+                model.run_model(initialize_model=False)
 
-            model.run_model(initialize_model=False)
+        else:
+            model.run_model(till_termination=True)
 
         results_df = pd.concat([model._outputs.water_flux,
                                 model._outputs.water_storage,
@@ -120,6 +118,7 @@ class AquaCropEvaluator(Evaluator):
         depths_col = np.zeros(len(results_df))
         depths_col[:len(depths)] = depths
         results_df["depth"] = depths_col
+        print(results_df["DryYield"].max(), results_df["IrrDay"].sum(), model._outputs.final_stats["Dry yield (tonne/ha)"].max(), model._outputs.final_stats["Seasonal irrigation (mm)"].max())
         return results_df
 
     def evaluate_candidate(self, candidate: Prescriptor) -> tuple[np.ndarray, int]:
