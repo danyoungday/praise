@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from presp.evaluator import Evaluator
 from presp.prescriptor import Prescriptor
+from sklearn.preprocessing import MinMaxScaler
 
 # pylint: disable=protected-access
 
@@ -15,7 +16,7 @@ class AquaCropEvaluator(Evaluator):
     """
     Evaluator that runs the Aquacrop simulator.
     """
-    def __init__(self, aquacrop_params: dict, n_jobs: int):
+    def __init__(self, aquacrop_params: dict, scale_data_path: str = None, n_jobs: int = 1):
         """
         aquacrop params:
             sim_start_date: str
@@ -29,9 +30,11 @@ class AquaCropEvaluator(Evaluator):
             init_wc_params:
                 wc_type: str
                 value: list[int]
+        scale_data_path: optional path to a CSV file containing data to scale the features with
         """
         super().__init__(["yield", "irrigation"], n_jobs=n_jobs)
 
+        # Set up AquaCrop model
         filepath = get_filepath(aquacrop_params["weather_filepath"])
         self.weather_data = prepare_weather(filepath)
         self.soil = Soil(**aquacrop_params["soil_params"])
@@ -41,6 +44,17 @@ class AquaCropEvaluator(Evaluator):
         self.sim_start_date = aquacrop_params['sim_start_date']
         self.sim_end_date = aquacrop_params['sim_end_date']
 
+        # Scaler
+        # NOTE: We are technically cheating by looking into the future of weather here
+        self.scaler = None
+        self.feature_names = None
+        if scale_data_path:
+            self.scaler = MinMaxScaler()
+            scaler_data = pd.read_csv(scale_data_path)
+            scaler_data = scaler_data.drop(columns=["Date", "baseline", "depth"])
+            self.scaler.fit(scaler_data)
+            self.feature_names = scaler_data.columns.tolist()
+
     def update_predictor(self, _):
         pass
 
@@ -48,47 +62,26 @@ class AquaCropEvaluator(Evaluator):
         """
         Extracts features from the AquaCropModel at time step t.
         Take weather from time t and outputs from time t-1.
-        Convert to torch tensor for the NNPrescriptor.
         """
-        total_t = model._outputs.crop_growth.shape[0]
 
-        # Weather features: low and high temp, precipitation, evapotranspiration, time
-        weather = model._weather[t, 0:4]  # weather[:, 4] is the time, not needed
-        weather_mins = [0.0, 0.0, 0.0, 0.0]
-        weather_maxes = [50.0, 50.0, 100.0, 10.0]
-
-        # exclude water_flux[:, 4] because it's always nan
-        # Water flux features: Water requirement, surface storage, irrigation per day, infiltration, runoff,
-        # deep percolation, capillary rise, groundwater inflow, soil evaporation, potential soil evaporation,
-        # crop transpiration, potential crop transpiration
-        mask = np.ones(model._outputs.water_flux.shape[1], dtype=bool)
-        mask[[1, 4]] = False
-        water_flux = model._outputs.water_flux[t-1, mask]
-        water_flux_mins = [0.0] * 14
-        water_flux_maxes = [total_t, total_t, 400.0, 10.0, 50.0, 50.0, 50.0, 30.0, 5.0, 5.0, 8.0, 8.0, 8.0, 8.0]
-
-        # Water storage features: time, growing season, days after planting, water content in each compartment (1-12)
-        water_storage = model._outputs.water_storage[t-1, 3:]
-        water_storage_mins = [0.0] * 12
-        water_storage_maxes = [0.5] * 12  # guessing from chatgpt
-
-        # Crop growth features: time, season, dap, growing degree days + cum, root depth, canopy cover + no stress,
-        # biomass + no stress, harvest index + adjusted, dry + fresh yield + potential 
+        weather = model._weather[t, :4]  # column 4 is the date
+        water_flux = model._outputs.water_flux[t-1]
+        # columns 0 and 2 are duplicates
+        water_storage_cols = [1] + list(range(3, model._outputs.water_storage.shape[1]))
+        water_storage = model._outputs.water_storage[t-1, water_storage_cols]
+        # columns 0, 1 and 2 are duplicates
         crop_growth = model._outputs.crop_growth[t-1, 3:]
-        crop_growth_mins = [0.0] * 12
-        # We're cheating a bit here by knowing how long the crops are going to grow for
-        # TODO: yield scaling is hard-coded
-        crop_growth_maxes = [25.0, 25.0 * total_t, 2.0, 1.0, 1.0, 2000.0, 2000.0, 0.6, 0.6, 20.0, 20.0, 20.0]
-
-        # Normalize features
-        weather = (weather - np.array(weather_mins)) / (np.array(weather_maxes) - np.array(weather_mins))
-        water_flux = (water_flux - np.array(water_flux_mins)) / (np.array(water_flux_maxes) - np.array(water_flux_mins))
-        water_storage = (water_storage - np.array(water_storage_mins)) / (np.array(water_storage_maxes) - np.array(water_storage_mins))  # noqa
-        crop_growth = (crop_growth - np.array(crop_growth_mins)) / (np.array(crop_growth_maxes) - np.array(crop_growth_mins))  # noqa
 
         features = np.concatenate((weather, water_flux, water_storage, crop_growth))
+
+        if self.scaler:
+            df_row = pd.DataFrame([features], columns=self.feature_names)
+            scaled = self.scaler.transform(df_row)
+            scaled_df = pd.DataFrame(scaled, columns=self.feature_names)
+            scaled_df = scaled_df.drop(columns=["dap", "z_gw", "growing_season"])
+            features = scaled_df.values
+
         features = features.astype(np.float32)
-        features = features.reshape(1, -1)
         return features
 
     def run_aquacrop(self, model: AquaCropModel, candidate: Prescriptor) -> pd.DataFrame:
@@ -124,7 +117,9 @@ class AquaCropEvaluator(Evaluator):
                                 model._outputs.water_storage,
                                 model._outputs.crop_growth], axis=1)
         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
-        results_df["depth"] = depths
+        depths_col = np.zeros(len(results_df))
+        depths_col[:len(depths)] = depths
+        results_df["depth"] = depths_col
         return results_df
 
     def evaluate_candidate(self, candidate: Prescriptor) -> tuple[np.ndarray, int]:
@@ -137,7 +132,33 @@ class AquaCropEvaluator(Evaluator):
                               initial_water_content=self.init_wc,
                               irrigation_management=IrrigationManagement(irrigation_method=5))
 
-        results = self.run_aquacrop(model, candidate)
-        final_stats = results["final_stats"]
-        return np.array([-1 * final_stats["Dry yield (tonne/ha)"].mean(),
-                         final_stats["Seasonal irrigation (mm)"].mean()]), 0
+        results_df = self.run_aquacrop(model, candidate)
+        dry_yield = results_df["DryYield"].max()
+        seasonal_irrigation = results_df["IrrDay"].sum()
+
+        return np.array([-1 * dry_yield, seasonal_irrigation]), 0
+
+
+# def main():
+#     import yaml
+#     from prescriptor import AquaCropPrescriptor
+#     with open("config.yml", "r", encoding="utf-8") as f:
+#         config = yaml.safe_load(f)
+
+#     evaluator = AquaCropEvaluator(config["eval_params"]["aquacrop_params"], config["eval_params"]["scale_data_path"], 1)
+#     dummy_prescriptor = AquaCropPrescriptor(**config["prescriptor_params"])
+
+#     model = AquaCropModel(sim_start_time=evaluator.sim_start_date,
+#                           sim_end_time=evaluator.sim_end_date,
+#                           weather_df=evaluator.weather_data,
+#                           soil=evaluator.soil,
+#                           crop=evaluator.crop,
+#                           initial_water_content=evaluator.init_wc,
+#                           irrigation_management=IrrigationManagement(irrigation_method=5))
+
+#     results_df = evaluator.run_aquacrop(model, dummy_prescriptor)
+#     final_stats = model._outputs.final_stats
+
+
+# if __name__ == "__main__":
+#     main()

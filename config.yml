@@ -6,7 +6,7 @@ evolution_params:
   n_elites: 0
   mutation_rate: 0.1
   mutation_factor: 0.1
-  save_path: results/one-season
+  save_path: results/scaled
 
 # Prescriptor-specific params
 prescriptor_params:
@@ -36,4 +36,5 @@ eval_params:
     init_wc_params:
       wc_type: Pct
       value: [70]
+  scale_data_path: data/one-season-data.csv
   n_jobs: -1

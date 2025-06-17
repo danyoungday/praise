@@ -195,3 +195,5 @@ cython_debug/
 
 wandb/
 results/
+seed/
+!seed/seed.py
