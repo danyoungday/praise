@@ -197,3 +197,4 @@ wandb/
 results/
 seed/
 !seed/seed.py
+data/*.csv

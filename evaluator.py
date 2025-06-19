@@ -9,6 +9,8 @@ from presp.evaluator import Evaluator
 from presp.prescriptor import Prescriptor
 from sklearn.preprocessing import MinMaxScaler
 
+from utils import trim_post_harvest
+
 # pylint: disable=protected-access
 
 
@@ -16,7 +18,7 @@ class AquaCropEvaluator(Evaluator):
     """
     Evaluator that runs the Aquacrop simulator.
     """
-    def __init__(self, aquacrop_params: dict, scale_data_path: str = None, n_jobs: int = 1):
+    def __init__(self, aquacrop_params: dict, features: list[str], scale_data_path: str = None, n_jobs: int = 1):
         """
         aquacrop params:
             sim_start_date: str
@@ -44,16 +46,22 @@ class AquaCropEvaluator(Evaluator):
         self.sim_start_date = aquacrop_params['sim_start_date']
         self.sim_end_date = aquacrop_params['sim_end_date']
 
+        self.features = list(features)
+
         # Scaler
         # NOTE: We are technically cheating by looking into the future of weather here
         self.scaler = None
-        self.feature_names = None
+        self.all_feature_names = None
         if scale_data_path:
             self.scaler = MinMaxScaler()
             scaler_data = pd.read_csv(scale_data_path)
-            scaler_data = scaler_data.drop(columns=["Date", "baseline", "depth"])
+            scaler_data = trim_post_harvest(scaler_data)
+
+            self.all_feature_names = scaler_data.columns.tolist()
+            self.all_feature_names.remove("baseline")
+            self.all_feature_names.remove("depth")
+            scaler_data = scaler_data[features]
             self.scaler.fit(scaler_data)
-            self.feature_names = scaler_data.columns.tolist()
 
     def update_predictor(self, _):
         pass
@@ -63,8 +71,7 @@ class AquaCropEvaluator(Evaluator):
         Extracts features from the AquaCropModel at time step t.
         Take weather from time t and outputs from time t-1.
         """
-
-        weather = model._weather[t, :4]  # column 4 is the date
+        weather = model._weather[t]  # column 4 is the date
         water_flux = model._outputs.water_flux[t-1]
         # columns 0 and 2 are duplicates
         water_storage_cols = [1] + list(range(3, model._outputs.water_storage.shape[1]))
@@ -72,17 +79,14 @@ class AquaCropEvaluator(Evaluator):
         # columns 0, 1 and 2 are duplicates
         crop_growth = model._outputs.crop_growth[t-1, 3:]
 
-        features = np.concatenate((weather, water_flux, water_storage, crop_growth))
+        feature_data = np.concatenate((weather, water_flux, water_storage, crop_growth))
 
         if self.scaler:
-            df_row = pd.DataFrame([features], columns=self.feature_names)
-            scaled = self.scaler.transform(df_row)
-            scaled_df = pd.DataFrame(scaled, columns=self.feature_names)
-            scaled_df = scaled_df.drop(columns=["dap", "z_gw", "growing_season"])
-            features = scaled_df.values
+            df_row = pd.DataFrame([feature_data], columns=self.all_feature_names)
+            feature_data = self.scaler.transform(df_row[self.features])
 
-        features = features.astype(np.float32)
-        return features
+        feature_data = feature_data.astype(np.float32)
+        return feature_data
 
     def run_aquacrop(self, model: AquaCropModel, candidate: Prescriptor) -> pd.DataFrame:
         """
@@ -107,7 +111,7 @@ class AquaCropEvaluator(Evaluator):
                 depths.append(depth)
                 model._param_struct.IrrMngt.depth = depth
                 model.run_model(initialize_model=False)
-
+        
         else:
             model.run_model(till_termination=True)
 
@@ -118,7 +122,6 @@ class AquaCropEvaluator(Evaluator):
         depths_col = np.zeros(len(results_df))
         depths_col[:len(depths)] = depths
         results_df["depth"] = depths_col
-        print(results_df["DryYield"].max(), results_df["IrrDay"].sum(), model._outputs.final_stats["Dry yield (tonne/ha)"].max(), model._outputs.final_stats["Seasonal irrigation (mm)"].max())
         return results_df
 
     def evaluate_candidate(self, candidate: Prescriptor) -> tuple[np.ndarray, int]:
@@ -140,12 +143,15 @@ class AquaCropEvaluator(Evaluator):
 
 # def main():
 #     import yaml
-#     from prescriptor import AquaCropPrescriptor
+#     from prescriptor import AquaCropPrescriptor, ReservoirPrescriptor
 #     with open("config.yml", "r", encoding="utf-8") as f:
 #         config = yaml.safe_load(f)
+#     config["prescriptor_params"]["input_size"] = 5
+#     config["prescriptor_params"]["model_params"][0]["in_features"] = 64
+#     config["eval_params"]["n_jobs"] = 1
 
-#     evaluator = AquaCropEvaluator(config["eval_params"]["aquacrop_params"], config["eval_params"]["scale_data_path"], 1)
-#     dummy_prescriptor = AquaCropPrescriptor(**config["prescriptor_params"])
+#     evaluator = AquaCropEvaluator(**config["eval_params"])
+#     dummy_prescriptor = ReservoirPrescriptor(**config["prescriptor_params"])
 
 #     model = AquaCropModel(sim_start_time=evaluator.sim_start_date,
 #                           sim_end_time=evaluator.sim_end_date,
@@ -157,7 +163,7 @@ class AquaCropEvaluator(Evaluator):
 
 #     results_df = evaluator.run_aquacrop(model, dummy_prescriptor)
 #     final_stats = model._outputs.final_stats
-
+#     print(final_stats)
 
 # if __name__ == "__main__":
 #     main()

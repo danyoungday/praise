@@ -1,5 +1,3 @@
-import time
-
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
@@ -56,26 +54,40 @@ def make_clouds(fig, dates, num_curves: int, y_offset: float):
         noise = np.random.normal(scale=np.random.uniform(0.2, 0.5), size=len(dates))
         y = y_base + noise
 
-        name = "a cloud" if cloud == 0 else ""
+        name = "a pretty cloud" if cloud == 0 else ""
         showlegend = cloud == 0
         fig.add_trace(go.Scatter(x=dates, y=y, mode="lines", line={"width": 2, "color": "white"}, opacity=0.7, name=name, showlegend=showlegend, legendrank=0),
                       row=1, col=1)
 
 
-def plot_plotly(filtered_df: pd.DataFrame, yield_range: tuple[float, float], irr_range: tuple[float, float]):
+def plot_plotly(df: pd.DataFrame, selected_baseline: int):
     fig = make_subplots(rows=2, cols=1,
                         shared_xaxes=True,
                         row_heights=[0.3, 0.7],
                         vertical_spacing=0.05,
                         specs=[[{"secondary_y": False}], [{"secondary_y": True}]])
 
+    yield_range = (df["DryYield"].min(), df["DryYield"].max())
+    irr_range = (df["IrrDay"].min(), df["IrrDay"].max())
+
+    # Filter data for the selected baseline
+    filtered_df = df[df['baseline'] == selected_baseline].sort_values('Date')
+
     fig.add_trace(go.Scatter(x=filtered_df["Date"], y=filtered_df["Precipitation"], line={"color": "#4FC3F7"}, name="precipitation"),
                   row=1, col=1)
     fig.add_trace(go.Bar(x=filtered_df["Date"], y=filtered_df["IrrDay"], marker_color="#1976D2", name="irrigation"),
                   row=2, col=1, secondary_y=False)
-    fig.add_trace(go.Scatter(x=filtered_df["Date"], y=filtered_df["DryYield"], line={"color": "#FFC107"}, name="wheat yield"),
+    fig.add_trace(go.Scatter(x=filtered_df["Date"], y=filtered_df["DryYield"], line={"color": "#FFC107"}, name="maize yield"),
                   row=2, col=1, secondary_y=True)
-    
+
+    max_df = df[df["baseline"] == 9].sort_values("Date")
+    fig.add_trace(go.Scatter(x=max_df["Date"], y=max_df["DryYield"], line={"color": "#FFC107", "dash": "dash"}, opacity=0.7, name="max maize yield"),
+                  row=2, col=1, secondary_y=True)
+
+    min_df = df[df["baseline"] == 0].sort_values("Date")
+    fig.add_trace(go.Scatter(x=min_df["Date"], y=min_df["DryYield"], line={"color": "#FFC107", "dash": "dash"}, opacity=0.7, name="min maize yield"),
+                  row=2, col=1, secondary_y=True)
+
     fig.add_trace(go.Scatter(x=filtered_df["Date"], y=[0] * len(filtered_df), line={"color": "#8D6E63"}, name="the ground"),
                   row=2, col=1, secondary_y=True)
 
@@ -91,23 +103,19 @@ def main():
     np.random.seed(42)
 
     # Streamlit page configuration
-    st.title("Yield and Irrigation Plot by Baseline")
+    st.title("Yield and Irrigation Plot")
+    region = st.sidebar.selectbox("Select Region", ["Champion, Nebraska", "Tunisia", "..."], index=0)
+    crop_type = st.sidebar.selectbox("Crop Type", ["Maize", "Wheat", "Soybean", "..."], index=0)
+    weather_prediction = st.sidebar.selectbox("Weather Prediction", ["Oracle", "Last Year", "Low Precip", "High Precip"], index=0)
 
     # Read the dataframe
     df = pd.read_csv("data/one-season-data.csv")
     df = df.fillna(0)
 
-    yield_range = (df["DryYield"].min(), df["DryYield"].max())
-    irr_range = (df["IrrDay"].min(), df["IrrDay"].max())
-
     # Select a baseline
     selected_baseline = st.slider("Select Irrigation Level", min_value=0, max_value=9, value=0, step=1)
 
-    # Filter data for the selected baseline
-    filtered_df = df[df['baseline'] == selected_baseline].sort_values('Date')
-
-    # plot_matplotlib(filtered_df, yield_range, irr_range)
-    plot_plotly(filtered_df, yield_range, irr_range)
+    plot_plotly(df, selected_baseline)
 
 
 if __name__ == "__main__":

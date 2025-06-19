@@ -11,7 +11,8 @@ import wandb
 import yaml  # pylint: disable=wrong-import-order
 
 from evaluator import AquaCropEvaluator
-from prescriptor import AquaCropPrescriptor
+from data.generate import DataGenerator
+from prescriptor import AquaCropPrescriptor, ReservoirPrescriptor
 
 
 def main():
@@ -37,10 +38,18 @@ def main():
     save_path.mkdir(parents=True, exist_ok=True)
     shutil.copy2("config.yml", save_path / "config.yml")
 
+    # If data path does not exist, run data generation
+    data_path = config["eval_params"]["scale_data_path"]
+    if not Path(data_path).exists():
+        print("Generating data...")
+        generator = DataGenerator(config["eval_params"]["aquacrop_params"], config["eval_params"]["features"])
+        all_results_df = generator.generate_data("baselines/one-season.csv")
+        all_results_df.to_csv(data_path, index=False)
+
     # Set up and run evolution
     evaluator = AquaCropEvaluator(**config["eval_params"])
-    prescriptor_factory = NNPrescriptorFactory(AquaCropPrescriptor, **config["prescriptor_params"])
-
+    presc_cls = AquaCropPrescriptor if config["prescriptor_type"] == "aquacrop" else ReservoirPrescriptor
+    prescriptor_factory = NNPrescriptorFactory(presc_cls, **config["prescriptor_params"])
     evolution = Evolution(evaluator=evaluator,
                           prescriptor_factory=prescriptor_factory,
                           **config["evolution_params"])
