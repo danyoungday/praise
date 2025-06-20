@@ -1,33 +1,18 @@
 # Evolution params
 evolution_params:
   n_generations: 100
-  population_size: 100
-  remove_population_pct: 0.5
+  population_size: 50
+  remove_population_pct: 0.0
   n_elites: 0
   mutation_rate: 0.1
   mutation_factor: 0.1
-  save_path: results/reservoir
-
-# Prescriptor-specific params
-prescriptor_type: aquacrop
-prescriptor_params:
-  depth_scale: 50.0
-  device: cpu
-  model_params:
-    - type: linear
-      in_features: 5
-      out_features: 64
-    - type: relu
-    - type: linear
-      in_features: 64
-      out_features: 1
-    - type: sigmoid
+  save_path: results/rnn
 
 # Evaluation params
 eval_params:
   aquacrop_params:
-    sim_start_date: 2016/05/01
-    sim_end_date: 2016/10/31
+    sim_start_date: 05/01
+    sim_end_date: 10/31
     weather_filepath: champion_climate.txt
     soil_params:
       soil_type: ClayLoam
@@ -37,54 +22,4 @@ eval_params:
     init_wc_params:
       wc_type: Pct
       value: [70]
-  scale_data_path: data/less-features.csv
   n_jobs: -1
-  features:
-    # - MinTemp
-    # - MaxTemp
-    - Precipitation
-    # - ReferenceET
-    # - Date
-    - time_step_counter
-    # - season_counter
-    # - dap
-    # - Wr
-    # - z_gw
-    # - surface_storage
-    - IrrDay
-    # - Infl
-    # - Runoff
-    # - DeepPerc
-    # - CR
-    # - GwIn
-    # - Es
-    # - EsPot
-    # - Tr
-    # - TrPot
-    # - growing_season
-    # - th1
-    # - th2
-    # - th3
-    # - th4
-    # - th5
-    # - th6
-    # - th7
-    # - th8
-    # - th9
-    # - th10
-    # - th11
-    # - th12
-    # - gdd
-    - gdd_cum
-    # - z_root
-    # - canopy_cover
-    # - canopy_cover_ns
-    # - biomass
-    # - biomass_ns
-    # - harvest_index
-    # - harvest_index_adj
-    - DryYield
-    # - FreshYield
-    # - YieldPot
-    # - depth
-    # - baseline

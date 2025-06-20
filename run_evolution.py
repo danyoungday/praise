@@ -4,15 +4,15 @@ Main running logic
 from pathlib import Path
 import shutil
 
+import numpy as np
 import pandas as pd
 from presp.evolution import Evolution
-from presp.prescriptor import NNPrescriptorFactory
 import wandb
 import yaml  # pylint: disable=wrong-import-order
 
 from evaluator import AquaCropEvaluator
 from data.generate import DataGenerator
-from prescriptor import AquaCropPrescriptor, ReservoirPrescriptor
+from prescriptor import RNNPrescriptorFactory
 
 
 def main():
@@ -38,18 +38,10 @@ def main():
     save_path.mkdir(parents=True, exist_ok=True)
     shutil.copy2("config.yml", save_path / "config.yml")
 
-    # If data path does not exist, run data generation
-    data_path = config["eval_params"]["scale_data_path"]
-    if not Path(data_path).exists():
-        print("Generating data...")
-        generator = DataGenerator(config["eval_params"]["aquacrop_params"], config["eval_params"]["features"])
-        all_results_df = generator.generate_data("baselines/one-season.csv")
-        all_results_df.to_csv(data_path, index=False)
-
     # Set up and run evolution
     evaluator = AquaCropEvaluator(**config["eval_params"])
-    presc_cls = AquaCropPrescriptor if config["prescriptor_type"] == "aquacrop" else ReservoirPrescriptor
-    prescriptor_factory = NNPrescriptorFactory(presc_cls, **config["prescriptor_params"])
+    prescriptor_factory = RNNPrescriptorFactory()
+
     evolution = Evolution(evaluator=evaluator,
                           prescriptor_factory=prescriptor_factory,
                           **config["evolution_params"])
