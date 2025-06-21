@@ -11,12 +11,14 @@ from scipy.optimize import fmin
 from tqdm import tqdm
 import yaml
 
+from evaluator import AquaCropEvaluator
+
 
 class BaselineRunner:
     """
     Runner that keeps track of AquaCrop params to run the model in optimization.
     """
-    def __init__(self, aquacrop_params: dict):
+    def __init__(self, aquacrop_params: dict, year: int):
         """
         aquacrop params:
             sim_start_date: str
@@ -30,6 +32,7 @@ class BaselineRunner:
             init_wc_params:
                 wc_type: str
                 value: list[int]
+        year: the year to run the model for
         """
         filepath = get_filepath(aquacrop_params["weather_filepath"])
         self.weather_data = prepare_weather(filepath)
@@ -37,8 +40,8 @@ class BaselineRunner:
         self.crop = Crop(**aquacrop_params["crop_params"])
         self.init_wc = InitialWaterContent(**aquacrop_params["init_wc_params"])
 
-        self.sim_start_date = aquacrop_params['sim_start_date']
-        self.sim_end_date = aquacrop_params['sim_end_date']
+        self.sim_start_date = f"{year}/{aquacrop_params['sim_start_date']}"
+        self.sim_end_date = f"{year}/{aquacrop_params['sim_end_date']}"
 
     def run_model(self, smts, max_irr_season):
         """
@@ -115,54 +118,27 @@ def main(config_path: str, baseline_save_path: str):
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    baseline_runner = BaselineRunner(config["eval_params"]["aquacrop_params"])
+    evaluator = AquaCropEvaluator(**config["eval_params"])
+    years = evaluator.years
 
-    opt_smts = []
-    yld_list = []
-    tirr_list = []
-    for max_irr in tqdm(range(0, 500, 50)):
-        # find optimal thresholds and save to list
-        smts = baseline_runner.optimize(4, max_irr)
-        opt_smts.append(smts)
+    rows = []
+    for year in tqdm(years, desc="Getting baseline for years"):
+        baseline_runner = BaselineRunner(config["eval_params"]["aquacrop_params"], year)
+        for max_irr in tqdm(range(0, 500, 50), leave=False):
+            row = {"year": year, "max_irrigation": max_irr}
+            # find optimal thresholds and save to list
+            smts = baseline_runner.optimize(4, max_irr)
+            for i, smt in enumerate(smts):
+                row[f"SMT-{i+1}"] = smt
 
-        # save the optimal yield and total irrigation
-        yld, tirr, _ = baseline_runner.evaluate(smts, max_irr, True)
-        yld_list.append(yld)
-        tirr_list.append(tirr)
+            # save the optimal yield and total irrigation
+            yld, tirr, _ = baseline_runner.evaluate(smts, max_irr, True)
+            row["yield"] = yld
+            row["irrigation"] = tirr
 
-    results_df = pd.DataFrame()
-    for i in range(len(opt_smts[0])):
-        results_df[f"SMT-{i+1}"] = [smt[i] for smt in opt_smts]
-    results_df["yield"] = yld_list
-    results_df["irrigation"] = tirr_list
-    results_df["max_irrigation"] = list(range(0, 500, 50))
+    results_df = pd.DataFrame(rows)
     results_df.to_csv(baseline_save_path, index=False)
-
-    # create plot
-    fig, ax = plt.subplots(1, 1, figsize=(13, 8))
-
-    # plot results
-    ax.scatter(tirr_list, yld_list)
-    ax.plot(tirr_list, yld_list)
-
-    # labels
-    ax.set_xlabel('Total Irrigation (ha-mm)', fontsize=18)
-    ax.set_ylabel('Yield (tonne/ha)', fontsize=18)
-    ax.set_xlim([-20, 600])
-    ax.set_ylim([2, 15.5])
-
-    # annotate with optimal thresholds
-    bbox = dict(boxstyle="round", fc="1")
-    offset = [15, 15, 15, 15, 15, -125, -100,  -5, 10, 10]
-    yoffset = [0, -5, -10, -15, -15,  0,  10, 15, -20, 10]
-    for i, smt in enumerate(opt_smts):
-        smt = smt.clip(0, 100)
-        ax.annotate('(%.0f, %.0f, %.0f, %.0f)' % (smt[0], smt[1], smt[2], smt[3]),
-                    (tirr_list[i], yld_list[i]), xytext=(offset[i], yoffset[i]), textcoords='offset points',
-                    bbox=bbox, fontsize=12)
-
-    plt.show()
 
 
 if __name__ == "__main__":
-    main("config.yml", "baselines/one-season.csv")
+    main("config.yml", "baselines/many-year.csv")

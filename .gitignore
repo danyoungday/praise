@@ -198,3 +198,4 @@ results/
 seed/
 !seed/seed.py
 data/*.csv
+.DS_Store

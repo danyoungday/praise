@@ -67,28 +67,43 @@ class AquaCropEvaluator(Evaluator):
         self.weather_scaled = torch.from_numpy(weather_scaled).float().to(self.device)
         self.years = self.weather_data["year"].unique().tolist()
 
+        # For now subset the weather data
+        precips = self.weather_scaled[:, :, 2]
+        avg_precips = precips.mean(axis=1)
+        lowest_precip = torch.argmin(avg_precips).item()
+        highest_precip = torch.argmax(avg_precips).item()
+        subset_idxs = [lowest_precip, highest_precip, len(self.years) - 2, len(self.years) - 1]
+        self.weather_scaled = self.weather_scaled[subset_idxs]
+        self.years = [self.years[i] for i in subset_idxs]
+
     def update_predictor(self, _):
         pass
 
-    def run_aquacrop(self, candidate: RNNPrescriptor) -> list[dict[str, float]]:
+    def run_aquacrop(self, candidate: RNNPrescriptor, detailed_output: bool = False) -> pd.DataFrame:
         """
         Runs aquacrop on a given candidate strategy.
         Returns a dict:
             yield
             irrigation
             mulch_pct
+        If detailed_output is True, returns a DataFrame with the entire time series of results for every year.
         """
-        candidate.to(self.device)
-        policies = candidate.forward(self.weather_scaled)
-        policies = policies.cpu().numpy()
+        # Batched torch inference
+        with torch.no_grad():
+            candidate.eval()
+            candidate.to(self.device)
+            policies = candidate.forward(self.weather_scaled)
+            policies = policies.cpu().numpy()
 
         results_dicts = []
+        full_results_dfs = []
         for policy, year in zip(policies, self.years):
+            # Set up management according to candidate generated policy
             irrigation_management = IrrigationManagement(irrigation_method=1,
                                                          SMT=policy[0:4].tolist())
-
             field_management = FieldMngt(mulches=True, mulch_pct=policy[4])
 
+            # Run policy through AquaCrop model in given year
             model = AquaCropModel(sim_start_time=f"{year}/{self.sim_start_date}",
                                   sim_end_time=f"{year}/{self.sim_end_date}",
                                   weather_df=self.weather_data,
@@ -98,12 +113,27 @@ class AquaCropEvaluator(Evaluator):
                                   irrigation_management=irrigation_management,
                                   field_management=field_management)
             model.run_model(till_termination=True)
-            results = model._outputs.final_stats
-            results_dicts.append({"yield": results["Dry yield (tonne/ha)"].max(),
-                                  "irrigation": results["Seasonal irrigation (mm)"].max(),
-                                  "mulch_pct": policy[4]})
 
-        results_df = pd.DataFrame(results_dicts)
+            # Process results based on detailed_output flag
+            if detailed_output:
+                full_results_df = pd.concat([model._outputs.water_flux,
+                                             model._outputs.water_storage,
+                                             model._outputs.crop_growth], axis=1)
+                full_results_df = full_results_df.loc[:, ~full_results_df.columns.duplicated()]
+                full_results_df["mulch_pct"] = policy[4]
+                full_results_df["year"] = year
+                full_results_dfs.append(full_results_df)
+            else:
+                results = model._outputs.final_stats
+                results_dicts.append({"yield": results["Dry yield (tonne/ha)"].max(),
+                                      "irrigation": results["Seasonal irrigation (mm)"].max(),
+                                      "mulch_pct": policy[4]})
+
+        # Return detailed output or summary results
+        if detailed_output:
+            results_df = pd.concat(full_results_dfs, axis=0)
+        else:
+            results_df = pd.DataFrame(results_dicts)
         return results_df
 
     def evaluate_candidate(self, candidate: RNNPrescriptor) -> tuple[np.ndarray, int]:

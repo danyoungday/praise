@@ -1,12 +1,13 @@
 # Evolution params
 evolution_params:
   n_generations: 100
-  population_size: 50
-  remove_population_pct: 0.0
+  population_size: 100
+  remove_population_pct: 0.5
   n_elites: 0
   mutation_rate: 0.1
   mutation_factor: 0.1
-  save_path: results/rnn
+  save_path: results/rnn-seeded
+  seed_path: seed/rnn
 
 # Evaluation params
 eval_params:
@@ -22,4 +23,5 @@ eval_params:
     init_wc_params:
       wc_type: Pct
       value: [70]
+  device: mps
   n_jobs: -1

@@ -62,12 +62,13 @@ class ReservoirPrescriptor(NNPrescriptor):
                    torch.zeros(1, 1, self.hidden_size).to(self.device))
 
 
-class RNNPrescriptor(Prescriptor):
+class RNNPrescriptor(torch.nn.Module, Prescriptor):
     """
     Prescriptor that uses RNN
     """
     def __init__(self):
-        super().__init__()
+        torch.nn.Module.__init__(self)
+        Prescriptor.__init__(self)
         self.rnn = torch.nn.RNN(input_size=4, hidden_size=64, batch_first=True)
         self.fc = torch.nn.Linear(64, 5)
         self.sigmoid = torch.nn.Sigmoid()
@@ -77,18 +78,11 @@ class RNNPrescriptor(Prescriptor):
         Context: N x L x Context
         Output: N x Actions
         """
-        with torch.no_grad():
-            out, _ = self.rnn(context)
-            presc = self.fc(out[:, -1, :])
-            scaled = self.sigmoid(presc) * 100.0
-            return scaled
+        out, _ = self.rnn(context)
+        presc = self.fc(out[:, -1, :])
+        scaled = self.sigmoid(presc) * 100.0
+        return scaled
 
-    def to(self, device: str):
-        """
-        Moves the model to the specified device.
-        """
-        self.rnn.to(device)
-        self.fc.to(device)
 
 class RNNPrescriptorFactory(PrescriptorFactory):
     def __init__(self):
