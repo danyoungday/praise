@@ -1,11 +1,10 @@
 """
 Code to run the baseline optimization strategy using the simplex algorithm
 """
-from aquacrop import AquaCropModel, Soil, Crop, InitialWaterContent, IrrigationManagement
+from aquacrop import AquaCropModel, Soil, Crop, InitialWaterContent, IrrigationManagement, FieldMngt
 from aquacrop.utils import prepare_weather, get_filepath
 
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.optimize import fmin
 from tqdm import tqdm
@@ -18,7 +17,7 @@ class BaselineRunner:
     """
     Runner that keeps track of AquaCrop params to run the model in optimization.
     """
-    def __init__(self, aquacrop_params: dict, year: int):
+    def __init__(self, aquacrop_params: dict, mulch_pct: int, year: int):
         """
         aquacrop params:
             sim_start_date: str
@@ -43,6 +42,8 @@ class BaselineRunner:
         self.sim_start_date = f"{year}/{aquacrop_params['sim_start_date']}"
         self.sim_end_date = f"{year}/{aquacrop_params['sim_end_date']}"
 
+        self.field_mngt = FieldMngt(mulches=True, mulch_pct=mulch_pct)
+
     def run_model(self, smts, max_irr_season):
         """
         funciton to run model and return results for given set of soil moisture targets
@@ -56,7 +57,8 @@ class BaselineRunner:
                               soil=self.soil,
                               crop=self.crop,
                               initial_water_content=self.init_wc,
-                              irrigation_management=irrmngt)
+                              irrigation_management=irrmngt,
+                              field_management=self.field_mngt)
 
         model.run_model(till_termination=True)
         return model.get_simulation_results()
@@ -121,24 +123,26 @@ def main(config_path: str, baseline_save_path: str):
     evaluator = AquaCropEvaluator(**config["eval_params"])
     years = evaluator.years
 
+    mulch_pcts = [0, 50, 100]
     rows = []
-    for year in tqdm(years, desc="Getting baseline for years"):
-        baseline_runner = BaselineRunner(config["eval_params"]["aquacrop_params"], year)
-        for max_irr in tqdm(range(0, 500, 50), leave=False):
-            row = {"year": year, "max_irrigation": max_irr}
-            # find optimal thresholds and save to list
-            smts = baseline_runner.optimize(4, max_irr)
-            for i, smt in enumerate(smts):
-                row[f"SMT-{i+1}"] = smt
+    for mulch_pct in mulch_pcts:
+        for year in tqdm(years, desc="Getting baseline for years"):
+            baseline_runner = BaselineRunner(config["eval_params"]["aquacrop_params"], mulch_pct, year)
+            for max_irr in tqdm(range(0, 500, 50), leave=False):
+                row = {"year": year, "mulch_pct": mulch_pct, "max_irrigation": max_irr}
+                # find optimal thresholds and save to list
+                smts = baseline_runner.optimize(4, max_irr)
+                for i, smt in enumerate(smts):
+                    row[f"SMT-{i+1}"] = smt
 
-            # save the optimal yield and total irrigation
-            yld, tirr, _ = baseline_runner.evaluate(smts, max_irr, True)
-            row["yield"] = yld
-            row["irrigation"] = tirr
+                # save the optimal yield and total irrigation
+                yld, tirr, _ = baseline_runner.evaluate(smts, max_irr, True)
+                row["yield"] = yld
+                row["irrigation"] = tirr
 
     results_df = pd.DataFrame(rows)
     results_df.to_csv(baseline_save_path, index=False)
 
 
 if __name__ == "__main__":
-    main("config.yml", "baselines/many-year.csv")
+    main("config.yml", "baselines/full-baseline.csv")

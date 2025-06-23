@@ -4,14 +4,12 @@ Main running logic
 from pathlib import Path
 import shutil
 
-import numpy as np
 import pandas as pd
 from presp.evolution import Evolution
 import wandb
 import yaml  # pylint: disable=wrong-import-order
 
 from evaluator import AquaCropEvaluator
-from data.generate import DataGenerator
 from prescriptor import RNNPrescriptorFactory
 
 
