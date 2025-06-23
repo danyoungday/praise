@@ -31,7 +31,7 @@ def generate_data():
     all_outputs = []
     for cand_id in tqdm(results_df["cand_id"]):
         candidate = population[cand_id]
-        full_outputs = evaluator.run_aquacrop(candidate, detailed_output=True)
+        full_outputs = evaluator.run_candidate(candidate, detailed_output=True)
         full_outputs = full_outputs[save_cols]
         full_outputs["cand_id"] = cand_id
         all_outputs.append(full_outputs)

@@ -67,19 +67,45 @@ def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, max_irr: int, m
     yield_range = (data_df["DryYield"].min(), data_df["DryYield"].max())
     irr_range = (data_df["IrrDay"].min(), data_df["IrrDay"].max())
 
-    fig.add_trace(go.Scatter(x=weather["Date"], y=weather["Precipitation"], line={"color": "#4FC3F7"}, name="precipitation"),
-                  row=1, col=1)
-    fig.add_trace(go.Bar(x=weather["Date"], y=df["IrrDay"], marker_color="#1976D2", name="irrigation"),
-                  row=2, col=1, secondary_y=False)
-    fig.add_trace(go.Scatter(x=weather["Date"], y=df["DryYield"], line={"color": "#FFC107"}, name="maize yield"),
-                  row=2, col=1, secondary_y=True)
+    precip = go.Scatter(
+        x=weather["Date"],
+        y=weather["Precipitation"],
+        line={"color": "#4FC3F7"},
+        name="precipitation"
+    )
+    fig.add_trace(precip, row=1, col=1)
+    irrigation = go.Bar(
+        x=weather["Date"],
+        y=df["IrrDay"],
+        marker_color="#1976D2",
+        name="irrigation"
+    )
+    fig.add_trace(irrigation, row=2, col=1, secondary_y=False)
+    maize_yield = go.Scatter(
+        x=weather["Date"],
+        y=df["DryYield"],
+        line={"color": "#FFC107"},
+        name="maize yield"
+    )
+    fig.add_trace(maize_yield, row=2, col=1, secondary_y=True)
 
     # We scale the mulch percentage to the irrigation range to show on the graph
     mulch_scaled = df['mulch_pct'].max() / 100 * irr_range[1]
-    fig.add_trace(go.Scatter(x=weather["Date"], y=[mulch_scaled] * len(weather["Date"]), line={"color": "#66BB6A"}, name=f"{df['mulch_pct'].max():.0f}% mulch"), row=2, col=1, secondary_y=False)
+    mulch = go.Scatter(
+        x=weather["Date"],
+        y=[mulch_scaled] * len(weather["Date"]),
+        line={"color": "#66BB6A"},
+        name=f"{df['mulch_pct'].max():.0f}% mulch"
+    )
+    fig.add_trace(mulch, row=2, col=1, secondary_y=False)
 
-    fig.add_trace(go.Scatter(x=weather["Date"], y=[0] * len(df), line={"color": "#8D6E63"}, name="the ground"),
-                  row=2, col=1, secondary_y=True)
+    ground = go.Scatter(
+        x=weather["Date"],
+        y=[0] * len(weather["Date"]),
+        line={"color": "#8D6E63"},
+        name="the ground"
+    )
+    fig.add_trace(ground, row=2, col=1, secondary_y=False)
 
     make_clouds(fig, weather["Date"], num_curves=5, y_offset=precip_range[1])
 
@@ -91,13 +117,17 @@ def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, max_irr: int, m
 
 
 def main():
+    """
+    Main logic to run Streamlit app.
+    Gets inputs and loads data, then passes it into the plotting function.
+    """
     np.random.seed(42)
 
     # Streamlit page configuration
     st.title("Yield and Irrigation Plot")
     # For now these do nothing
-    region = st.sidebar.selectbox("Select Region", ["Champion, Nebraska", "Tunisia", "..."], index=0)
-    crop_type = st.sidebar.selectbox("Crop Type", ["Maize", "Wheat", "Soybean", "..."], index=0)
+    _ = st.sidebar.selectbox("Select Region", ["Champion, Nebraska", "Tunisia", "..."], index=0)
+    _ = st.sidebar.selectbox("Crop Type", ["Maize", "Wheat", "Soybean", "..."], index=0)
 
     # Select the year
     weather_years = {"Oracle": 2018, "Last Year": 2017, "Low Precip": 1984, "High Precip": 2009}

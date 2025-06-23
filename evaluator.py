@@ -79,14 +79,12 @@ class AquaCropEvaluator(Evaluator):
     def update_predictor(self, _):
         pass
 
-    def run_aquacrop(self, candidate: RNNPrescriptor, detailed_output: bool = False) -> pd.DataFrame:
+    def run_candidate(self, candidate: RNNPrescriptor, detailed_output: bool = False) -> pd.DataFrame:
         """
-        Runs aquacrop on a given candidate strategy.
-        Returns a dict:
-            yield
-            irrigation
-            mulch_pct
-        If detailed_output is True, returns a DataFrame with the entire time series of results for every year.
+        Runs a candidate to get actions for each context. (Policy for each year of weather)
+        Then runs each policy through the AquaCrop model for each year.
+        Returns a DataFrame with the results. If detailed_output is True, each row corresponds to a time step in each
+        simulation. If False, returns a summary DataFrame where each row corresponds to a year.
         """
         # Batched torch inference
         with torch.no_grad():
@@ -95,65 +93,80 @@ class AquaCropEvaluator(Evaluator):
             policies = candidate.forward(self.weather_scaled)
             policies = policies.cpu().numpy()
 
-        results_dicts = []
-        full_results_dfs = []
+        all_results_dfs = []
         for policy, year in zip(policies, self.years):
-            # Set up management according to candidate generated policy
             irrigation_management = IrrigationManagement(irrigation_method=1,
                                                          SMT=policy[0:4].tolist())
             field_management = FieldMngt(mulches=True, mulch_pct=policy[4])
-
-            # Run policy through AquaCrop model in given year
-            model = AquaCropModel(sim_start_time=f"{year}/{self.sim_start_date}",
-                                  sim_end_time=f"{year}/{self.sim_end_date}",
-                                  weather_df=self.weather_data,
-                                  soil=self.soil,
-                                  crop=self.crop,
-                                  initial_water_content=self.init_wc,
-                                  irrigation_management=irrigation_management,
-                                  field_management=field_management)
-            model.run_model(till_termination=True)
-
-            # Process results based on detailed_output flag
-            if detailed_output:
-                full_results_df = pd.concat([model._outputs.water_flux,
-                                             model._outputs.water_storage,
-                                             model._outputs.crop_growth], axis=1)
-                full_results_df = full_results_df.loc[:, ~full_results_df.columns.duplicated()]
-                full_results_df["mulch_pct"] = policy[4]
-                full_results_df["year"] = year
-                full_results_dfs.append(full_results_df)
-            else:
-                results = model._outputs.final_stats
-                results_dicts.append({"yield": results["Dry yield (tonne/ha)"].max(),
-                                      "irrigation": results["Seasonal irrigation (mm)"].max(),
-                                      "mulch_pct": policy[4]})
+            aquacrop_input = {
+                "irrigation_management": irrigation_management,
+                "field_management": field_management
+            }
+            results_df = self.run_aquacrop(aquacrop_input, year, detailed_output=detailed_output)
+            all_results_dfs.append(results_df)
 
         # Return detailed output or summary results
+        results_df = pd.concat(all_results_dfs, axis=0)
+        return results_df
+
+    def run_aquacrop(self, aquacrop_input: dict, year: int, detailed_output: bool = False) -> pd.DataFrame:
+        """
+        Runs aquacrop on a given candidate strategy.
+        Returns a DataFrame with the results:
+            yield
+            irrigation
+            mulch_pct
+        If detailed_output is True, returns a DataFrame with the entire time series of results for every year.
+        """
+
+        # Run policy through AquaCrop model in given year
+        model = AquaCropModel(sim_start_time=f"{year}/{self.sim_start_date}",
+                              sim_end_time=f"{year}/{self.sim_end_date}",
+                              weather_df=self.weather_data,
+                              soil=self.soil,
+                              crop=self.crop,
+                              initial_water_content=self.init_wc,
+                              **aquacrop_input)
+        model.run_model(till_termination=True)
+
+        # Process results based on detailed_output flag
+        mulch_pct = aquacrop_input["field_management"].mulch_pct
         if detailed_output:
-            results_df = pd.concat(full_results_dfs, axis=0)
+            results_df = pd.concat([model._outputs.water_flux,
+                                    model._outputs.water_storage,
+                                    model._outputs.crop_growth], axis=1)
+            results_df = results_df.loc[:, ~results_df.columns.duplicated()]
+            results_df["mulch_pct"] = mulch_pct
+            results_df["year"] = year
         else:
-            results_df = pd.DataFrame(results_dicts)
+            results_df = model._outputs.final_stats
+            results_df = results_df.rename(columns={
+                "Dry yield (tonne/ha)": "yield",
+                "Seasonal irrigation (mm)": "irrigation"
+            })
+            results_df["mulch_pct"] = mulch_pct
+            results_df["year"] = year
+
         return results_df
 
     def evaluate_candidate(self, candidate: RNNPrescriptor) -> tuple[np.ndarray, int]:
-        results_df = self.run_aquacrop(candidate)
+        results_df = self.run_candidate(candidate)
         return np.array([-1 * results_df["yield"].mean(),
                          results_df["irrigation"].mean(),
                          results_df["mulch_pct"].mean()]), 0
 
 
-def main():
-    import yaml
-    with open("config.yml", "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    config["eval_params"]["n_jobs"] = 1
+# def main():
+#     import yaml
+#     with open("config.yml", "r", encoding="utf-8") as f:
+#         config = yaml.safe_load(f)
+#     config["eval_params"]["n_jobs"] = 1
 
-    evaluator = AquaCropEvaluator(**config["eval_params"])
-    dummy_prescriptor = RNNPrescriptor()
+#     evaluator = AquaCropEvaluator(**config["eval_params"])
+#     dummy_prescriptor = RNNPrescriptor()
 
-    results = evaluator.run_aquacrop(dummy_prescriptor)
-    print(results)
+#     results = evaluator.run_aquacrop(dummy_prescriptor)
+#     print(results)
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

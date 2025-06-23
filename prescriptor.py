@@ -85,13 +85,22 @@ class RNNPrescriptor(torch.nn.Module, Prescriptor):
 
 
 class RNNPrescriptorFactory(PrescriptorFactory):
-    def __init__(self):
-        super().__init__()
-
+    """
+    Prescriptor factory for the RNN Prescriptor. Same as the NNPrescriptorFactory but we separate the RNN and FC.
+    """
     def random_init(self) -> RNNPrescriptor:
+        """
+        Note sure how to specially randomly initialize the RNNPrescriptor so we just let PyTorch do its default
+        behavior.
+        """
         return RNNPrescriptor()
-    
+
     def crossover(self, parents: list[RNNPrescriptor]) -> list[RNNPrescriptor]:
+        """
+        NOTE: Now that RNNPrescriptor is a torch.nn.Module, we don't have to iterate over the parameters in the
+        separate modules RNN and FC, we can just iterate over the parameters of the whole model. However, I'm keeping
+        it like this for now because I'm afraid it may have unintended consequences.
+        """
         with torch.no_grad():
             child = RNNPrescriptor()
             parent1_rnn, parent2_rnn = parents[0].rnn, parents[1].rnn
@@ -118,7 +127,7 @@ class RNNPrescriptorFactory(PrescriptorFactory):
                                      param[mutate_mask].shape,
                                      dtype=param.dtype)
                 param[mutate_mask] *= (1 + noise)
-    
+
     def save_population(self, population: list[RNNPrescriptor], path: str):
         pop_dict = {cand.cand_id: (cand.rnn.state_dict(), cand.fc.state_dict()) for cand in population}
         torch.save(pop_dict, path)
