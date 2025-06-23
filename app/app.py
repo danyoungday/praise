@@ -15,7 +15,7 @@ def make_clouds(fig, dates, num_curves: int, y_offset: float):
     for cloud in range(num_curves):
         x = np.linspace(0, len(dates), len(dates))
         y_base = np.sin(x) + np.cos(x / np.random.uniform(0.5, 2.0)) + y_offset
-        noise = np.random.normal(scale=np.random.uniform(0.2, 0.5), size=len(dates))
+        noise = np.random.normal(scale=np.random.uniform(0, 1), size=len(dates))
         y = y_base + noise
 
         name = "a pretty cloud" if cloud == 0 else ""
@@ -38,9 +38,16 @@ def get_cand_id_from_filters(data_df: pd.DataFrame, max_irr: int, max_mulch: int
     """
     # Filter candidates by irrigation and mulch
     year_df = data_df[data_df["year"] == weather_year]
-
     valid_mulches = year_df[year_df["mulch_pct"] <= max_mulch]["cand_id"].unique().tolist()
+
+    if len(valid_mulches) == 0:
+        return None
+
     filtered_df = year_df[year_df["cand_id"].isin(valid_mulches)]
+
+    if filtered_df.empty:
+        return None
+
     total_irrs = filtered_df.groupby("cand_id")["IrrDay"].sum()
     cand_id = total_irrs[total_irrs <= max_irr].idxmax()
     return cand_id
@@ -54,7 +61,10 @@ def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, max_irr: int, m
     precip_range = (weather_df["Precipitation"].min(), weather_df["Precipitation"].max())
 
     cand_id = get_cand_id_from_filters(data_df, max_irr, max_mulch, weather_year)
-    print(cand_id, weather_year)
+    if cand_id is None:
+        st.error("No candidates found for selected irrigation and mulch limits.")
+        return
+
     df = data_df[(data_df["year"] == weather_year) & (data_df["cand_id"] == cand_id)]
     weather = weather_df[weather_df["year"] == weather_year]
 
@@ -105,13 +115,14 @@ def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, max_irr: int, m
         line={"color": "#8D6E63"},
         name="the ground"
     )
-    fig.add_trace(ground, row=2, col=1, secondary_y=False)
+    fig.add_trace(ground, row=2, col=1, secondary_y=True)
 
     make_clouds(fig, weather["Date"], num_curves=5, y_offset=precip_range[1])
 
     fig.update_yaxes(title_text="Precipitation (mm)", range=precip_range, row=1, col=1)
     fig.update_yaxes(title_text="Irrigation (mm)", range=irr_range, row=2, col=1, secondary_y=False)
     fig.update_yaxes(title_text="Yield (tonnes/ha)", range=yield_range, row=2, col=1, secondary_y=True)
+    fig.update_xaxes(dtick="M1", tickformat="%b")
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -124,7 +135,26 @@ def main():
     np.random.seed(42)
 
     # Streamlit page configuration
-    st.title("Yield and Irrigation Plot")
+    st.set_page_config(
+        page_title="Irrigation Planner",
+        page_icon="🌽",
+        menu_items={
+            "Get help": "mailto:daniel.young2@cognizant.com",
+            "Report a bug": None,
+            "About": """
+            This app visualizes irrigation and mulch strategies for yield optimization. Optimization is done using NeuroAI from the Cognizant AI Lab. This project was done under Project Resilience: a nonprofit collaboration with the United Nations.
+            """
+        }
+    )
+
+    st.title("Irrigation and Mulch Strategies for Yield Optimization")
+
+    st.markdown(
+        """
+        Select a context situation in the sidebar, then specify the max irrigation and mulch to use.
+        """
+    )
+
     # For now these do nothing
     _ = st.sidebar.selectbox("Select Region", ["Champion, Nebraska", "Tunisia", "..."], index=0)
     _ = st.sidebar.selectbox("Crop Type", ["Maize", "Wheat", "Soybean", "..."], index=0)
