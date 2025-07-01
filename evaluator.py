@@ -83,8 +83,9 @@ class AquaCropEvaluator(Evaluator):
         """
         Runs a candidate to get actions for each context. (Policy for each year of weather)
         Then runs each policy through the AquaCrop model for each year.
-        Returns a DataFrame with the results. If detailed_output is True, each row corresponds to a time step in each
-        simulation. If False, returns a summary DataFrame where each row corresponds to a year.
+        Returns the policies and the results DataFrame.
+            If detailed_output is True, each row in the DF corresponds to a time step in each
+            simulation. If False, returns a summary DataFrame where each row corresponds to a year.
         """
         # Batched torch inference
         with torch.no_grad():
@@ -107,7 +108,7 @@ class AquaCropEvaluator(Evaluator):
 
         # Return detailed output or summary results
         results_df = pd.concat(all_results_dfs, axis=0)
-        return results_df
+        return policies, results_df
 
     def run_aquacrop(self, aquacrop_input: dict, year: int, detailed_output: bool = False) -> pd.DataFrame:
         """
@@ -152,7 +153,7 @@ class AquaCropEvaluator(Evaluator):
         return results_df
 
     def evaluate_candidate(self, candidate: RNNPrescriptor) -> tuple[np.ndarray, int]:
-        results_df = self.run_candidate(candidate)
+        _, results_df = self.run_candidate(candidate)
         return np.array([-1 * results_df["yield"].mean(),
                          results_df["irrigation"].mean(),
                          results_df["mulch_pct"].mean()]), 0
