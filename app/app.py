@@ -53,17 +53,12 @@ def get_cand_id_from_filters(data_df: pd.DataFrame, max_irr: int, max_mulch: int
     return cand_id
 
 
-def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, max_irr: int, max_mulch: int, weather_year: int):
+def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, cand_id: str, weather_year: int):
     """
     Creates the plotly figure showing a cloud, precipitation, yield, mulch, and irrigation strategy for a specific year
     filtered by the specified irrigation and mulch limits.
     """
     precip_range = (weather_df["Precipitation"].min(), weather_df["Precipitation"].max())
-
-    cand_id = get_cand_id_from_filters(data_df, max_irr, max_mulch, weather_year)
-    if cand_id is None:
-        st.error("No candidates found for selected irrigation and mulch limits.")
-        return
 
     df = data_df[(data_df["year"] == weather_year) & (data_df["cand_id"] == cand_id)]
     weather = weather_df[weather_df["year"] == weather_year]
@@ -127,6 +122,21 @@ def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, max_irr: int, m
     st.plotly_chart(fig, use_container_width=True)
 
 
+def display_actions_table(data_df: pd.DataFrame, weather_df: pd.DataFrame, cand_id: str, weather_year: int):
+    """
+    Gets the days to irrigate and the amount of irrigation for a selected candidate and year.
+    """
+    df = data_df[(data_df["year"] == weather_year) & (data_df["cand_id"] == cand_id)].copy()
+    irr_df = df[df["IrrDay"] > 0]
+    if not irr_df.empty:
+        st.subheader("Irrigation Timeline")
+        start_date = pd.to_datetime(weather_df["Date"]).min()
+        irr_df["Date"] = start_date + pd.to_timedelta(irr_df["time_step_counter"], unit="D")
+        irr_df["Date"] = irr_df["Date"].dt.strftime("%B %d")
+        irr_df["IrrDay"] = irr_df["IrrDay"].round(2)
+        st.dataframe(irr_df[["Date", "IrrDay"]].rename(columns={"IrrDay": "Irrigation (mm)"}))
+
+
 def main():
     """
     Main logic to run Streamlit app.
@@ -183,8 +193,13 @@ def main():
                           max_value=100.0,
                           value=100.0,
                           step=0.1)
-
-    plot_plotly(data_df, weather_df, max_irr, max_mulch, weather_years[weather])
+    weather_year = weather_years[weather]
+    cand_id = get_cand_id_from_filters(data_df, max_irr, max_mulch, weather_year)
+    if cand_id is None:
+        st.error("No candidates found for selected irrigation and mulch limits.")
+    else:
+        plot_plotly(data_df, weather_df, cand_id, weather_year)
+        display_actions_table(data_df, weather_df, cand_id, weather_year)
 
 
 if __name__ == "__main__":

@@ -128,6 +128,8 @@ class AquaCropEvaluator(Evaluator):
                               initial_water_content=self.init_wc,
                               **aquacrop_input)
         model.run_model(till_termination=True)
+        if model._outputs.final_stats.empty:
+            raise ValueError(f"AquaCrop did not run successfully for year {year}")
 
         # Process results based on detailed_output flag
         mulch_pct = aquacrop_input["field_management"].mulch_pct
