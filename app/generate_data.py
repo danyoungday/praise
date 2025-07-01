@@ -9,11 +9,29 @@ from evaluator import AquaCropEvaluator
 from prescriptor import RNNPrescriptorFactory
 
 
+def generate_weather(evaluator: AquaCropEvaluator, years: list[int]):
+    # Get the weather data for the simulation period over each year
+    weather_df = evaluator.weather_data
+    weather_df["monthday"] = weather_df["Date"].dt.month * 100 + weather_df["Date"].dt.day
+    start_month, start_day = evaluator.sim_start_date.split("/")
+    end_month, end_day = evaluator.sim_end_date.split("/")
+    start_month, start_day, end_month, end_day = int(start_month), int(start_day), int(end_month), int(end_day)
+    start_monthday = start_month * 100 + start_day
+    end_monthday = end_month * 100 + end_day
+
+    filtered_weather_df = weather_df[
+        (weather_df["monthday"] >= start_monthday) & (weather_df["monthday"] <= end_monthday) &
+        (weather_df["year"].isin(years))
+    ]
+    filtered_weather_df = filtered_weather_df.drop(columns=["monthday"])
+    filtered_weather_df.to_csv("app/weather.csv", index=False)
+
+
 def generate_data():
     """
     Takes in a results_dir and outputs a data.csv file with the full outputs of the candidates in the final generation.
     """
-    results_dir = "results/rnn-seeded"
+    results_dir = "results/potato"
     with open(f"{results_dir}/config.yml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
@@ -37,23 +55,10 @@ def generate_data():
         all_outputs.append(full_outputs)
 
     all_outputs = pd.concat(all_outputs, axis=0)
-    all_outputs.to_csv("app/data.csv", index=False)
+    all_outputs.to_csv("app/potato-data.csv", index=False)
 
-    # Get the weather data for the simulation period over each year
-    weather_df = evaluator.weather_data
-    weather_df["monthday"] = weather_df["Date"].dt.month * 100 + weather_df["Date"].dt.day
-    start_month, start_day = evaluator.sim_start_date.split("/")
-    end_month, end_day = evaluator.sim_end_date.split("/")
-    start_month, start_day, end_month, end_day = int(start_month), int(start_day), int(end_month), int(end_day)
-    start_monthday = start_month * 100 + start_day
-    end_monthday = end_month * 100 + end_day
-
-    filtered_weather_df = weather_df[
-        (weather_df["monthday"] >= start_monthday) & (weather_df["monthday"] <= end_monthday) &
-        (weather_df["year"].isin(all_outputs["year"].unique()))
-    ]
-    filtered_weather_df = filtered_weather_df.drop(columns=["monthday"])
-    filtered_weather_df.to_csv("app/weather.csv", index=False)
+    # years = all_outputs["year"].unique().tolist()
+    # generate_weather(evaluator, years)
 
 
 if __name__ == "__main__":

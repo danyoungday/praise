@@ -53,17 +53,12 @@ def get_cand_id_from_filters(data_df: pd.DataFrame, max_irr: int, max_mulch: int
     return cand_id
 
 
-def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, max_irr: int, max_mulch: int, weather_year: int):
+def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, cand_id: str, weather_year: int):
     """
     Creates the plotly figure showing a cloud, precipitation, yield, mulch, and irrigation strategy for a specific year
     filtered by the specified irrigation and mulch limits.
     """
     precip_range = (weather_df["Precipitation"].min(), weather_df["Precipitation"].max())
-
-    cand_id = get_cand_id_from_filters(data_df, max_irr, max_mulch, weather_year)
-    if cand_id is None:
-        st.error("No candidates found for selected irrigation and mulch limits.")
-        return
 
     df = data_df[(data_df["year"] == weather_year) & (data_df["cand_id"] == cand_id)]
     weather = weather_df[weather_df["year"] == weather_year]
@@ -95,7 +90,7 @@ def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, max_irr: int, m
         x=weather["Date"],
         y=df["DryYield"],
         line={"color": "#FFC107"},
-        name="maize yield"
+        name="yield"
     )
     fig.add_trace(maize_yield, row=2, col=1, secondary_y=True)
 
@@ -127,6 +122,38 @@ def plot_plotly(data_df: pd.DataFrame, weather_df: pd.DataFrame, max_irr: int, m
     st.plotly_chart(fig, use_container_width=True)
 
 
+def display_strategy(data_df: pd.DataFrame, cand_id: str, weather_year: int):
+    """
+    Shows the overall irrigation and mulch used.
+    """
+    df = data_df[(data_df["year"] == weather_year) & (data_df["cand_id"] == cand_id)].copy()
+    total_irr = df["IrrDay"].sum()
+    mulch_pct = df["mulch_pct"].max()
+    final_yield = df["DryYield"].max()
+    strategy_df = pd.DataFrame({
+        "Candidate ID": [cand_id],
+        "Total Irrigation (mm)": [f"{total_irr:.2f}"],
+        "Mulch Percentage": [f"{mulch_pct:.0f}%"],
+        "Final Yield (tonnes/ha)": [f"{final_yield:.2f}"]
+    })
+    st.dataframe(strategy_df, hide_index=True)
+
+
+def display_actions_table(data_df: pd.DataFrame, weather_df: pd.DataFrame, cand_id: str, weather_year: int):
+    """
+    Gets the days to irrigate and the amount of irrigation for a selected candidate and year.
+    """
+    df = data_df[(data_df["year"] == weather_year) & (data_df["cand_id"] == cand_id)].copy()
+    irr_df = df[df["IrrDay"] > 0]
+    if not irr_df.empty:
+        st.subheader("Irrigation Timeline")
+        start_date = pd.to_datetime(weather_df["Date"]).min()
+        irr_df["Date"] = start_date + pd.to_timedelta(irr_df["time_step_counter"], unit="D")
+        irr_df["Date"] = irr_df["Date"].dt.strftime("%B %d")
+        irr_df["IrrDay"] = irr_df["IrrDay"].round(2)
+        st.dataframe(irr_df[["Date", "IrrDay"]].rename(columns={"IrrDay": "Irrigation (mm)"}), hide_index=True)
+
+
 def main():
     """
     Main logic to run Streamlit app.
@@ -147,27 +174,25 @@ def main():
         }
     )
 
-    st.title("Irrigation and Mulch Strategies for Yield Optimization")
+    st.title("Yield Optimization")
 
-    st.markdown(
+    st.sidebar.markdown(
         """
-        Select a context situation in the sidebar, then specify the max irrigation and mulch to use.
+        Select a context situation, then specify the max irrigation and mulch to use.
         """
     )
 
     # For now these do nothing
     _ = st.sidebar.selectbox("Select Region", ["Champion, Nebraska", "Tunisia", "..."], index=0)
-    _ = st.sidebar.selectbox("Crop Type", ["Maize", "Wheat", "Soybean", "..."], index=0)
+    crop_select = st.sidebar.selectbox("Crop Type", ["Maize", "Potato", "..."], index=0)
+    crop_path_map = {"Maize": "app/maize-data.csv", "Potato": "app/potato-data.csv"}
 
     # Select the year
     weather_years = {"Oracle": 2018, "Last Year": 2017, "Low Precip": 1984, "High Precip": 2009}
     weather = st.sidebar.selectbox("Weather Prediction", ["Oracle", "Last Year", "Low Precip", "High Precip"], index=0)
 
     # Read the dataframe
-    data_df = pd.read_csv("app/data.csv")
-    results_df = pd.read_csv("results/rnn-subset/results.csv")
-    results_df = results_df[results_df["gen"] == results_df["gen"].max()]
-    results_df = results_df.sort_values(by="irrigation")
+    data_df = pd.read_csv(crop_path_map[crop_select])
 
     weather_df = pd.read_csv("app/weather.csv")
 
@@ -183,8 +208,14 @@ def main():
                           max_value=100.0,
                           value=100.0,
                           step=0.1)
-
-    plot_plotly(data_df, weather_df, max_irr, max_mulch, weather_years[weather])
+    weather_year = weather_years[weather]
+    cand_id = get_cand_id_from_filters(data_df, max_irr, max_mulch, weather_year)
+    if cand_id is None:
+        st.error("No candidates found for selected irrigation and mulch limits.")
+    else:
+        plot_plotly(data_df, weather_df, cand_id, weather_year)
+        display_strategy(data_df, cand_id, weather_year)
+        display_actions_table(data_df, weather_df, cand_id, weather_year)
 
 
 if __name__ == "__main__":
