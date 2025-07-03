@@ -1,0 +1,17 @@
+aquacrop==3.0.11
+flake8==7.1.1
+gymnasium==1.0.0
+matplotlib==3.10.3
+numpy==1.26.4
+pandas==2.2.3
+plotly==6.1.2
+presp @ file:///Users/964840/workspace/presp
+pylint==3.3.7
+PyYAML==6.0.2
+scikit-learn==1.7.0
+scipy==1.15.3
+seaborn==0.13.2
+streamlit==1.45.1
+torch==2.6.0
+tqdm==4.67.1
+wandb==0.20.1

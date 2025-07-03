@@ -157,19 +157,3 @@ class AquaCropEvaluator(Evaluator):
         return np.array([-1 * results_df["yield"].mean(),
                          results_df["irrigation"].mean(),
                          results_df["mulch_pct"].mean()]), 0
-
-
-# def main():
-#     import yaml
-#     with open("config.yml", "r", encoding="utf-8") as f:
-#         config = yaml.safe_load(f)
-#     config["eval_params"]["n_jobs"] = 1
-
-#     evaluator = AquaCropEvaluator(**config["eval_params"])
-#     dummy_prescriptor = RNNPrescriptor()
-
-#     results = evaluator.run_aquacrop(dummy_prescriptor)
-#     print(results)
-
-# if __name__ == "__main__":
-#     main()
